@@ -131,6 +131,15 @@ textarea{width:100%;min-height:78px;resize:vertical;font-size:14px;line-height:1
   <div style="margin-top:8px"><button onclick="saveCheckin()">Save check-in</button></div>
   <div class="ci-saved" id="ci-saved"></div>
 </div>
+<div class="sec">
+  <div class="sec-h"><h2>Backup</h2><div class="hint">data lives on this phone only</div></div>
+  <div class="m-row">
+    <button onclick="exportData()">Export backup</button>
+    <button class="ghost" onclick="document.getElementById('imp').click()">Import backup</button>
+    <input id="imp" type="file" accept="application/json,.json" style="display:none" onchange="importData(event)">
+  </div>
+  <div class="ci-saved" id="bk-msg"></div>
+</div>
 <div class="reset"><button class="ghost" onclick="resetAll()">Reset all data</button></div>
 
 <div class="overlay" id="ov" onclick="if(event.target===this)closeSheet()">
@@ -233,6 +242,24 @@ window.loadCheckin=function(){const w=document.getElementById('ci-week').value;d
 window.saveCheckin=function(){const w=document.getElementById('ci-week').value;DATA.checkins[w]=document.getElementById('ci-text').value;save();document.getElementById('ci-saved').textContent='✓ saved';setTimeout(()=>document.getElementById('ci-saved').textContent='',2000);};
 window.resetAll=function(){if(!confirm('Wipe all logged sessions, metrics and check-ins?'))return;DATA={sessions:{},metrics:[],checkins:{}};try{localStorage.removeItem(KEY);}catch(e){}document.getElementById('ci-week').innerHTML='';render();};
 
+function msg(id,t){const e=document.getElementById(id);e.textContent=t;setTimeout(()=>{e.textContent='';},3500);}
+window.exportData=async function(){
+  const payload=JSON.stringify({app:'90day',exported:new Date().toISOString(),data:DATA},null,2);
+  const fname='90day-backup-'+iso(new Date())+'.json';
+  try{const file=new File([payload],fname,{type:'application/json'});
+    if(navigator.canShare&&navigator.canShare({files:[file]})){await navigator.share({files:[file],title:fname});msg('bk-msg','✓ shared — choose Save to Files / Drive');return;}}catch(e){}
+  try{const url=URL.createObjectURL(new Blob([payload],{type:'application/json'}));const a=document.createElement('a');a.href=url;a.download=fname;document.body.appendChild(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(url),1000);msg('bk-msg','✓ backup file downloaded');}
+  catch(e){prompt('Copy this text and save it somewhere safe:',payload);}
+};
+window.importData=function(ev){const f=ev.target.files[0];if(!f)return;const r=new FileReader();
+  r.onload=function(){try{const parsed=JSON.parse(r.result);const d=parsed.data||parsed;
+    if(typeof d!=='object'||(!d.sessions&&!d.metrics&&!d.checkins))throw 0;
+    if(!confirm('Replace current data with this backup? Your present log will be overwritten.'))return;
+    DATA={sessions:d.sessions||{},metrics:d.metrics||[],checkins:d.checkins||{}};save();
+    document.getElementById('ci-week').innerHTML='';render();msg('bk-msg','✓ backup restored');}
+    catch(e){msg('bk-msg','✗ could not read that file');}};
+  r.readAsText(f);ev.target.value='';
+};
 load();render();
 if('serviceWorker' in navigator){window.addEventListener('load',()=>navigator.serviceWorker.register('sw.js').catch(()=>{}));}
 </script>
