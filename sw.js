@@ -1,4 +1,4 @@
-const CACHE='90day-v1';
+const CACHE='90day-v2';
 const ASSETS=['.','index.html','manifest.webmanifest','icon.png'];
 self.addEventListener('install',e=>{
   self.skipWaiting();
