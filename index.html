@@ -90,7 +90,12 @@ textarea{width:100%;min-height:78px;resize:vertical;font-size:14px;line-height:1
 .wnote b{color:var(--accent)}
 .wblock{margin-bottom:18px}
 .wblock .bt{font-family:'Space Mono',monospace;font-size:11px;letter-spacing:1px;color:var(--accent);text-transform:uppercase;margin-bottom:6px}
-.ex{display:flex;justify-content:space-between;gap:12px;padding:8px 0;border-bottom:1px solid var(--line)}
+.ex{padding:9px 0;border-bottom:1px solid var(--line)}
+.ex-top{display:flex;justify-content:space-between;gap:12px;align-items:baseline}
+.ex-log{display:flex;gap:6px;align-items:center;margin-top:7px}
+.ex-log input{width:74px;font-size:15px;padding:7px 8px}
+.ex-log .lastv{font-family:'Space Mono',monospace;font-size:10px;color:var(--mut);line-height:1.25}
+.ex-log .lastv b{color:var(--accent);font-weight:700}
 .ex .name{font-weight:700;font-size:14px}
 .ex .rx{font-family:'Space Mono',monospace;font-size:12px;color:var(--mut);white-space:nowrap}
 </style>
@@ -109,7 +114,7 @@ textarea{width:100%;min-height:78px;resize:vertical;font-size:14px;line-height:1
   <div class="stat"><div class="n" id="s-wa">—</div><div class="l">Waist cm</div><div class="sub" id="s-wa-d">the real metric</div></div>
 </div>
 <div class="sec">
-  <div class="sec-h"><h2>The Schedule</h2><div class="hint" id="sch-hint">tap a day → workout + log</div></div>
+  <div class="sec-h"><h2>The Schedule</h2><div class="hint" id="sch-hint">tap a day → workout + weights</div></div>
   <div class="weeks" id="weeks"></div>
 </div>
 <div class="sec">
@@ -161,7 +166,7 @@ textarea{width:100%;min-height:78px;resize:vertical;font-size:14px;line-height:1
 
 <script>
 const FIRST=new Date(2026,5,10), END=new Date(2026,8,13), KEY='fitness-90day';
-let DATA={sessions:{},metrics:[],checkins:{}}, CUR=null;
+let DATA={sessions:{},metrics:[],checkins:{},lifts:{}}, CUR=null;
 const WARMUP=["Cat-cow x8","World's greatest stretch x4/side","90/90 hip switches x6","Thoracic rotations x6/side","Bodyweight squats x10"];
 const COOLDOWN=["Couch stretch 30s/side","Thread-the-needle x5/side","Seated hamstring stretch 30s/side","Child's pose 30s"];
 const WORKOUTS={
@@ -192,7 +197,7 @@ const CORE=SCHED.filter(s=>s.type!=='C');
 function weekOf(date){const base=new Date(FIRST);base.setDate(base.getDate()-base.getDay());return Math.floor((date-base)/(7*864e5))+1;}
 const iso=d=>d.toISOString().slice(0,10);
 const TOTAL_WEEKS=weekOf(END);
-function load(){try{const r=localStorage.getItem(KEY);if(r)DATA=JSON.parse(r);}catch(e){}DATA.sessions=DATA.sessions||{};DATA.metrics=DATA.metrics||[];DATA.checkins=DATA.checkins||{};}
+function load(){try{const r=localStorage.getItem(KEY);if(r)DATA=JSON.parse(r);}catch(e){}DATA.sessions=DATA.sessions||{};DATA.metrics=DATA.metrics||[];DATA.checkins=DATA.checkins||{};DATA.lifts=DATA.lifts||{};}
 function save(){try{localStorage.setItem(KEY,JSON.stringify(DATA));}catch(e){console.error(e);}}
 function fmt(d){return d.toLocaleDateString('en-AU',{day:'2-digit',month:'short'});}
 function phaseNote(date,type){
@@ -234,7 +239,44 @@ function renderMetricStats(){const m=DATA.metrics,wtArr=m.filter(x=>x.wt!=null),
   if(waArr.length){document.getElementById('s-wa').textContent=waArr[waArr.length-1].wa.toFixed(1);const dl=waArr[waArr.length-1].wa-waArr[0].wa;document.getElementById('s-wa-d').textContent=(dl<=0?'−':'+')+Math.abs(dl).toFixed(1)+' cm';}
   const ll=document.getElementById('m-log');ll.innerHTML='';[...m].reverse().slice(0,8).forEach(x=>{ll.innerHTML+='<div><span>'+x.date+'</span><span>'+(x.wt!=null?x.wt+'kg':'—')+'  /  '+(x.wa!=null?x.wa+'cm':'—')+'</span></div>';});}
 function spark(svg,vals){if(vals.length<2){svg.innerHTML='';return;}const w=160,h=40,p=4,mn=Math.min(...vals),mx=Math.max(...vals),rng=(mx-mn)||1;const pts=vals.map((v,i)=>{const x=p+(i/(vals.length-1))*(w-2*p),y=h-p-((v-mn)/rng)*(h-2*p);return x.toFixed(1)+','+y.toFixed(1);}).join(' ');svg.setAttribute('viewBox','0 0 '+w+' '+h);svg.innerHTML='<polyline points="'+pts+'" fill="none" stroke="#F5C518" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"/>';}
-function wblockHtml(title,rows){let s='<div class="wblock"><div class="bt">'+title+'</div>';rows.forEach(r=>{s+='<div class="ex"><span class="name">'+r[0]+'</span>'+(r[1]?'<span class="rx">'+r[1]+'</span>':'')+'</div>';});return s+'</div>';}
+function exKey(n){return n.toLowerCase().replace(/[^a-z0-9]+/g,'-').replace(/^-|-$/g,'');}
+function lastEntry(name,beforeDate){
+  const k=exKey(name); let best=null;
+  Object.keys(DATA.lifts||{}).forEach(d=>{
+    if(d>=beforeDate)return;
+    const v=DATA.lifts[d]&&DATA.lifts[d][k];
+    if(v&&(v.w!=null||v.r!=null)&&(!best||d>best.date))best={date:d,w:v.w,r:v.r};
+  });
+  return best;
+}
+function wblockHtml(title,rows,logged){
+  let s='<div class="wblock"><div class="bt">'+title+'</div>';
+  rows.forEach(r=>{
+    const name=r[0];
+    s+='<div class="ex"><div class="ex-top"><span class="name">'+name+'</span>'+(r[1]?'<span class="rx">'+r[1]+'</span>':'')+'</div>';
+    if(logged){
+      const k=exKey(name);
+      const cur=(DATA.lifts&&DATA.lifts[CUR]&&DATA.lifts[CUR][k])||{};
+      const last=lastEntry(name,CUR);
+      const lastTxt=last?('last: <b>'+(last.w!=null?last.w+'kg':'—')+(last.r!=null?' × '+last.r:'')+'</b>'):'first time — set a baseline';
+      s+='<div class="ex-log">'+
+         '<input type="number" inputmode="decimal" step="0.5" placeholder="kg" value="'+(cur.w!=null?cur.w:'')+'" oninput="setLift(\''+k+'\',\'w\',this.value)">'+
+         '<input type="number" inputmode="numeric" step="1" placeholder="reps" value="'+(cur.r!=null?cur.r:'')+'" oninput="setLift(\''+k+'\',\'r\',this.value)">'+
+         '<span class="lastv">'+lastTxt+'</span></div>';
+    }
+    s+='</div>';
+  });
+  return s+'</div>';
+}
+window.setLift=function(k,field,val){
+  DATA.lifts=DATA.lifts||{}; DATA.lifts[CUR]=DATA.lifts[CUR]||{};
+  DATA.lifts[CUR][k]=DATA.lifts[CUR][k]||{};
+  const n=parseFloat(val);
+  if(val===''||isNaN(n))delete DATA.lifts[CUR][k][field]; else DATA.lifts[CUR][k][field]=n;
+  if(!Object.keys(DATA.lifts[CUR][k]).length)delete DATA.lifts[CUR][k];
+  if(!Object.keys(DATA.lifts[CUR]).length)delete DATA.lifts[CUR];
+  save();
+};
 window.openSession=function(k){CUR=k;const s=SCHED.find(x=>iso(x.date)===k);if(!s)return;const t=s.type,W=WORKOUTS[t];
   const dn={A:'SUNDAY',B:'WEDNESDAY',C:'FRIDAY'}[t];
   document.getElementById('sh-date').textContent=dn+' · '+fmt(s.date).toUpperCase();
@@ -242,7 +284,7 @@ window.openSession=function(k){CUR=k;const s=SCHED.find(x=>iso(x.date)===k);if(!
   document.getElementById('sh-focus').textContent=W.focus+(t==='C'?'':' · 30 min');
   const warm=W.warmup||WARMUP, cool=W.cooldown||COOLDOWN, wl=W.warmLabel||'Warm-up · 4 min', cl=W.coolLabel||'Cool-down · 4 min';
   let body=wblockHtml(wl,warm.map(x=>[x,'']));
-  W.blocks.forEach(b=>body+=wblockHtml(b.title,b.ex));
+  W.blocks.forEach(b=>body+=wblockHtml(b.title,b.ex,t!=='C'));
   body+=wblockHtml(cl,cool.map(x=>[x,'']));
   document.getElementById('sh-body').innerHTML='<div class="wnote">'+phaseNote(s.date,t)+'</div>'+body;
   const st=DATA.sessions[k]||'';document.getElementById('sh-done').textContent=st==='done'?'✓ Done':'Mark done';
@@ -264,14 +306,14 @@ window.exportData=async function(){
 };
 window.importData=function(ev){const f=ev.target.files[0];if(!f)return;const r=new FileReader();
   r.onload=function(){try{const parsed=JSON.parse(r.result);const d=parsed.data||parsed;
-    if(typeof d!=='object'||(!d.sessions&&!d.metrics&&!d.checkins))throw 0;
+    if(typeof d!=='object'||(!d.sessions&&!d.metrics&&!d.checkins&&!d.lifts))throw 0;
     if(!confirm('Replace current data with this backup? Your present log will be overwritten.'))return;
-    DATA={sessions:d.sessions||{},metrics:d.metrics||[],checkins:d.checkins||{}};save();
+    DATA={sessions:d.sessions||{},metrics:d.metrics||[],checkins:d.checkins||{},lifts:d.lifts||{}};save();
     document.getElementById('ci-week').innerHTML='';render();msg('bk-msg','✓ backup restored');}
     catch(e){msg('bk-msg','✗ could not read that file');}};
   r.readAsText(f);ev.target.value='';
 };
-window.resetAll=function(){if(!confirm('Wipe all logged sessions, metrics and check-ins?'))return;DATA={sessions:{},metrics:[],checkins:{}};try{localStorage.removeItem(KEY);}catch(e){}document.getElementById('ci-week').innerHTML='';render();};
+window.resetAll=function(){if(!confirm('Wipe all logged sessions, metrics and check-ins?'))return;DATA={sessions:{},metrics:[],checkins:{},lifts:{}};try{localStorage.removeItem(KEY);}catch(e){}document.getElementById('ci-week').innerHTML='';render();};
 load();render();
 if('serviceWorker' in navigator){window.addEventListener('load',()=>navigator.serviceWorker.register('sw.js').catch(()=>{}));}
 </script>
